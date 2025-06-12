@@ -5,10 +5,10 @@
 Some simple lines from `ecbn.txt`:
 
 ```
-6,Tim Coffman,EC Bad Nauheim,Player
-27,Alexander Dersch,EC Bad Nauheim,Player
-9,Brent Raedeke,EC Bad Nauheim,Player
-82,Markus Lillich,EC Bad Nauheim,Player
+bn6	-6- Tim Coffman (EC Bad Nauheim)
+bn27	-27- Alexander Dersch (EC Bad Nauheim)
+bn9	-9- Brent Raedeke (EC Bad Nauheim)
+bn82	-82- Markus Lillich (EC Bad Nauheim)
 ```
 
 Using poetry, you can simply run the sample application like so:
