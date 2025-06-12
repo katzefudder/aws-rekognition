@@ -1,5 +1,7 @@
 # Text recognition using AWS Rekognition 
 
+![A black & white image for demo purposes](demo.jpg)
+
 Using poetry, you can simply run the sample application like so:
 `poetry run python rekognition.py demo.jpg ecbn.txt`
 
