@@ -2,17 +2,9 @@ import boto3
 import csv
 import argparse
 import re
+from difflib import SequenceMatcher
 
 def load_team_roster(tsv_file):
-    """
-    Load the team roster from a TSV file.
-    
-    Parameters:
-    tsv_file (str): Path to the TSV file containing the team roster.
-    
-    Returns:
-    list: List of player dictionaries.
-    """
     team_roster = []
     try:
         with open(tsv_file, 'r') as file:
@@ -31,42 +23,70 @@ def load_team_roster(tsv_file):
                         "team": team,
                         "role": "Player"
                     }
-                team_roster.append(player)
+                    team_roster.append(player)
     except FileNotFoundError:
         print(f"Error: The file {tsv_file} was not found.")
     except Exception as e:
         print(f"Error: {e}")
     return team_roster
 
-def detect_text(photo):
-    """
-    Method to detect text in the given image.
-    
-    Parameters:
-    photo (str): Path of the image.
-    
-    Returns:
-    list: List of detected text lines with confidence greater than 90%.
-    """
+def similar(a, b):
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
+def get_person_bounding_boxes(photo_bytes):
+    client = boto3.client('rekognition')
+    response = client.detect_labels(Image={'Bytes': photo_bytes}, MaxLabels=20, MinConfidence=80)
+    
+    person_boxes = []
+    for label in response['Labels']:
+        if label['Name'] == 'Person':
+            for instance in label.get('Instances', []):
+                if 'BoundingBox' in instance:
+                    person_boxes.append(instance['BoundingBox'])
+    return person_boxes
+
+def is_inside(box_small, box_large):
+    # Determine if small box is fully inside the larger one
+    s_left = box_small['Left']
+    s_top = box_small['Top']
+    s_right = s_left + box_small['Width']
+    s_bottom = s_top + box_small['Height']
+
+    l_left = box_large['Left']
+    l_top = box_large['Top']
+    l_right = l_left + box_large['Width']
+    l_bottom = l_top + box_large['Height']
+
+    return s_left >= l_left and s_right <= l_right and s_top >= l_top and s_bottom <= l_bottom
+
+def detect_text(photo):
     detected_text = []
 
-    # Initialize boto3 client
     client = boto3.client('rekognition')
-    
+
     try:
-        # Read image file
         with open(photo, 'rb') as image:
-            response = client.detect_text(Image={'Bytes': image.read()})
-        
-        # Response from AWS Rekognition
-        text_detections = response['TextDetections']
+            image_bytes = image.read()
+
+        person_boxes = get_person_bounding_boxes(image_bytes)
+
+        # Now detect text
+        text_response = client.detect_text(Image={'Bytes': image_bytes})
+        text_detections = text_response['TextDetections']
+
         for text in text_detections:
             if text['Type'] == 'LINE' and text['Confidence'] > 90.0:
-                detected_text.append(text['DetectedText'])
-        
+                bounding_box = text['Geometry']['BoundingBox']
+                
+                # Accept only text inside at least one person box
+                if any(is_inside(bounding_box, person_box) for person_box in person_boxes):
+                    detected_text.append({
+                        'text': text['DetectedText'],
+                        'bounding_box': bounding_box
+                    })
+
         return detected_text
-    
+
     except FileNotFoundError:
         print(f"Error: The file {photo} was not found.")
         return []
@@ -74,43 +94,42 @@ def detect_text(photo):
         print(f"Error: {e}")
         return []
 
-def match_player_names_and_numbers(detected_text, team_roster):
-    """
-    Method to match detected text against a team roster.
-    
-    Parameters:
-    detected_text (list): List of detected text lines.
-    team_roster (list): List of player dictionaries.
-    
-    Returns:
-    list: List of matched player names and numbers with details.
-    """
+def match_player_names_and_numbers(detected_text_items, team_roster):
     matched_players = []
     matched_player_codes = set()
 
-    for text in detected_text:
+    for item in detected_text_items:
+        text = item['text']
         for player in team_roster:
-            surname = player["name"].split()[-1].lower()
-            number = str(player["number"]).lower() if player["number"] else None
-            if text.lower() == surname or (number and text.lower() == number):
+            surname = player["name"].split()[-1]
+            number = str(player["number"])
+
+            if (text.lower() == surname.lower()) or \
+               (text == number) or \
+               (similar(text, surname) > 0.8) or \
+               (similar(text, number) > 0.9):
+
                 if player["code"] not in matched_player_codes:
                     matched_players.append(player)
                     matched_player_codes.add(player["code"])
-    
     return matched_players
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Detect player names and numbers from an image.")
     parser.add_argument("image", help="Path to the image file.")
     parser.add_argument("roster", help="Path to the TSV file containing the team roster.")
-    
+
     args = parser.parse_args()
 
     team_roster = load_team_roster(args.roster)
-    detected_text = detect_text(args.image)
-    matched_players = match_player_names_and_numbers(detected_text, team_roster)
-    
-    print(f"Detected text: {detected_text}")
-    print("Matched player names and numbers:")
+    detected_text_items = detect_text(args.image)
+
+    print("Detected player-region text:")
+    for item in detected_text_items:
+        print(f" - '{item['text']}' at {item['bounding_box']}")
+
+    matched_players = match_player_names_and_numbers(detected_text_items, team_roster)
+
+    print("\nMatched player names and numbers:")
     for player in matched_players:
         print(f"- Code: {player.get('code', 'N/A')}, Number: {player.get('number', 'N/A')}, Name: {player.get('name', 'N/A')}, Team: {player.get('team', 'N/A')}, Role: {player.get('role', 'Player')}")
