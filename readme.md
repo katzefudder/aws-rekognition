@@ -2,6 +2,15 @@
 
 ![A black & white image for demo purposes](demo.jpg)
 
+Some simple lines from `ecbn.txt`:
+
+```
+6,Tim Coffman,EC Bad Nauheim,Player
+27,Alexander Dersch,EC Bad Nauheim,Player
+9,Brent Raedeke,EC Bad Nauheim,Player
+82,Markus Lillich,EC Bad Nauheim,Player
+```
+
 Using poetry, you can simply run the sample application like so:
 `poetry run python rekognition.py demo.jpg ecbn.txt`
 
